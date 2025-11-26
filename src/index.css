@@ -1,0 +1,9 @@
+@import "tailwindcss";
+
+/* Esto le dice a Tailwind v4: "Activa el modo oscuro cuando veas la clase .dark" */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Estilos base (opcional, para asegurar que la app ocupe toda la pantalla) */
+:root {
+    font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+}
