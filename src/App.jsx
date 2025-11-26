@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Plus, Trash2, Calendar as CalendarIcon, Clock, CheckCircle2, AlertCircle, AlertTriangle,
   Hourglass, Edit2, X, ChevronDown, ChevronRight, Save, Filter, CheckSquare, Tag,
@@ -186,6 +186,36 @@ export default function App() {
     return { type: 'distant', bgColor: 'bg-slate-400', textColor: 'text-slate-500 dark:text-slate-400', icon: <Coffee size={18} className="text-slate-400" />, borderColor: 'border-slate-400' };
   };
 
+  // --- FUNCION PARA AGRUPAR TAREAS (NUEVO) ---
+  const getGroupedTasksForSelect = () => {
+    const pending = tasks.filter(t => !t.completed);
+
+    // Agrupamos
+    const groups = {
+      overdue: [],
+      today: [],
+      critical: [], // 1-3
+      warning: [],  // 4-9
+      safe: [],     // 10+
+      distant: []   // 22+
+    };
+
+    pending.forEach(task => {
+      const { isOverdue, days } = getTaskStatus(task);
+      const label = `${task.title} (${isOverdue ? `Vencida ${Math.abs(days)}d` : days === 0 ? 'HOY' : `${days}d`})`;
+      const item = { ...task, label };
+
+      if (isOverdue) groups.overdue.push(item);
+      else if (days === 0) groups.today.push(item);
+      else if (days <= 3) groups.critical.push(item);
+      else if (days <= 9) groups.warning.push(item);
+      else if (days <= 21) groups.safe.push(item);
+      else groups.distant.push(item);
+    });
+
+    return groups;
+  };
+
   // --- LÓGICA DEL CALENDARIO ---
   const getMonthData = (date) => {
     const year = date.getFullYear();
@@ -255,18 +285,11 @@ export default function App() {
 
   // --- CALCULOS DE VISTAS ---
   const availableTags = [...new Set(tasks.map(t => t.tag).filter(tag => tag && tag.trim() !== ''))];
-
-  // Filtros
   const filteredTasks = tasks.filter(t => !t.completed && (activeFilter === 'all' || t.tag === activeFilter));
   const completedTasks = tasks.filter(t => t.completed);
-
-  // --- CORRECCIÓN DE ORDENAMIENTO ---
   const sortedActiveTasks = [...filteredTasks].sort((a, b) => {
-    // 1. Crear objetos Date completos (Fecha + Hora o T00:00)
-    const dateA = new Date(`${a.date}T${a.time || '23:59:59'}`); // Si no hay hora, al final del día
+    const dateA = new Date(`${a.date}T${a.time || '23:59:59'}`);
     const dateB = new Date(`${b.date}T${b.time || '23:59:59'}`);
-
-    // 2. Ordenar puramente por tiempo (más cercano a más lejano)
     return dateA - dateB;
   });
 
@@ -288,13 +311,10 @@ export default function App() {
           {(() => {
             const blanks = Array(startDayOfWeek).fill(null);
             const days = Array.from({ length: daysInMonth }, (_, i) => i + 1);
-
             return [...blanks, ...days].map((day, index) => {
               if (!day) return <div key={`blank-${index}`} className="aspect-square"></div>;
-
               const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
               const dayTasks = tasks.filter(t => t.date === dateStr);
-
               let dotColor = "";
               let isAllCompleted = dayTasks.length > 0 && dayTasks.every(t => t.completed);
               let hasPending = dayTasks.some(t => !t.completed);
@@ -308,14 +328,12 @@ export default function App() {
                   const diff = getCalendarDaysDiff(dateStr);
                   const config = getUrgencyConfig(diff, diff < 0, false);
                   dotColor = config.bgColor;
-
                   if (config.type === 'critical' || config.type === 'overdue') {
                     dayTextColor = "text-red-600 dark:text-red-400";
                     fontWeight = "font-bold";
                   }
                 }
               }
-
               const isSelected = selectedDate === dateStr;
               const isToday = dateStr === new Date().toISOString().split('T')[0];
 
@@ -323,11 +341,7 @@ export default function App() {
                 <button
                   key={day}
                   onClick={() => setSelectedDate(dateStr)}
-                  className={`
-                                relative aspect-square rounded-lg flex flex-col items-center justify-center transition-all
-                                ${isSelected ? 'bg-indigo-100 dark:bg-indigo-900/40 ring-2 ring-indigo-500 z-10' : 'hover:bg-slate-100 dark:hover:bg-slate-700/50'}
-                                ${isToday && !isSelected ? 'bg-slate-50 dark:bg-slate-700/30 ring-1 ring-slate-300 dark:ring-slate-600' : ''}
-                            `}
+                  className={`relative aspect-square rounded-lg flex flex-col items-center justify-center transition-all ${isSelected ? 'bg-indigo-100 dark:bg-indigo-900/40 ring-2 ring-indigo-500 z-10' : 'hover:bg-slate-100 dark:hover:bg-slate-700/50'} ${isToday && !isSelected ? 'bg-slate-50 dark:bg-slate-700/30 ring-1 ring-slate-300 dark:ring-slate-600' : ''}`}
                 >
                   <span className={`text-xs ${isToday ? 'font-black text-indigo-600 dark:text-indigo-400' : dayTextColor} ${fontWeight}`}>{day}</span>
                   {dayTasks.length > 0 && (
@@ -531,9 +545,25 @@ export default function App() {
                     <div>
                       <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-2">1. ¿En qué vas a trabajar?</label>
                       <div className="relative">
-                        <select value={focusState.activeTaskId || ''} onChange={(e) => setFocusState({ ...focusState, activeTaskId: Number(e.target.value) })} className="w-full p-4 bg-slate-50 dark:bg-slate-700 rounded-xl border-none outline-none text-slate-800 dark:text-white font-medium appearance-none cursor-pointer focus:ring-2 focus:ring-indigo-500">
+                        <select
+                          value={focusState.activeTaskId || ''}
+                          onChange={(e) => setFocusState({ ...focusState, activeTaskId: Number(e.target.value) })}
+                          className="w-full p-4 bg-slate-50 dark:bg-slate-700 rounded-xl border-none outline-none text-slate-800 dark:text-white font-medium appearance-none cursor-pointer focus:ring-2 focus:ring-indigo-500"
+                        >
                           <option value="" disabled>Selecciona una tarea...</option>
-                          {tasks.filter(t => !t.completed).map(t => (<option key={t.id} value={t.id}>{t.title}</option>))}
+                          {(() => {
+                            const grouped = getGroupedTasksForSelect();
+                            return (
+                              <>
+                                {grouped.overdue.length > 0 && <optgroup label="🔴 Vencidas">{grouped.overdue.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}</optgroup>}
+                                {grouped.today.length > 0 && <optgroup label="🟣 Para Hoy">{grouped.today.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}</optgroup>}
+                                {grouped.critical.length > 0 && <optgroup label="🔴 Crítico (1-3 días)">{grouped.critical.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}</optgroup>}
+                                {grouped.warning.length > 0 && <optgroup label="🟠 Atención (4-9 días)">{grouped.warning.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}</optgroup>}
+                                {grouped.safe.length > 0 && <optgroup label="🟢 A tiempo (10+ días)">{grouped.safe.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}</optgroup>}
+                                {grouped.distant.length > 0 && <optgroup label="⚪ Futuro">{grouped.distant.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}</optgroup>}
+                              </>
+                            );
+                          })()}
                         </select>
                         <ChevronDown className="absolute right-4 top-4 text-slate-400 pointer-events-none" size={20} />
                       </div>
