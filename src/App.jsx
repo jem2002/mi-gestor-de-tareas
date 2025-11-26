@@ -4,13 +4,12 @@ import {
   Hourglass, Edit2, X, ChevronDown, ChevronRight, Save, Filter, CheckSquare, Tag,
   Layout, Moon, Sun, Zap, AlertOctagon, Coffee, Play, ListTodo, Timer,
   PanelLeftClose, PanelLeftOpen, RotateCcw, Settings2, ArrowLeft, Pause,
-  ChevronLeft, LayoutGrid, List
+  ChevronLeft, LayoutGrid, List, CalendarDays
 } from 'lucide-react';
 
 export default function App() {
   // --- ESTADO GLOBAL ---
-  const [currentView, setCurrentView] = useState('tasks'); // 'tasks' | 'focus'
-  // Nuevo estado para alternar dentro de la vista de tareas: 'list' o 'calendar'
+  const [currentView, setCurrentView] = useState('tasks');
   const [taskViewMode, setTaskViewMode] = useState('list');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
@@ -26,6 +25,7 @@ export default function App() {
         time: '',
         tag: 'General',
         completed: false,
+        isEvent: false, // Nueva propiedad por defecto
         subtasks: []
       }
     ];
@@ -128,7 +128,12 @@ export default function App() {
     return { statusText: `${days} días restantes`, isOverdue: false, days: days };
   };
 
-  const getUrgencyConfig = (days, isOverdue, isCompleted = false) => {
+  const getUrgencyConfig = (days, isOverdue, isCompleted = false, isEvent = false) => {
+    // Lógica especial para Eventos Completados
+    if (isCompleted && isEvent) {
+      return { type: 'event-done', bgColor: 'bg-slate-100 dark:bg-slate-700', textColor: 'text-slate-400 dark:text-slate-500', icon: <CalendarDays size={18} />, borderColor: 'border-slate-200 dark:border-slate-700' };
+    }
+
     if (isCompleted) return { type: 'completed', bgColor: 'bg-slate-300', textColor: 'text-slate-500', icon: <CheckCircle2 size={18} />, borderColor: 'border-slate-300' };
     if (isOverdue) return { type: 'overdue', bgColor: 'bg-red-700', textColor: 'text-red-800 dark:text-red-400', icon: <AlertOctagon size={18} className="text-red-700 dark:text-red-400" />, borderColor: 'border-red-700' };
     if (days === 0) return { type: 'today', bgColor: 'bg-purple-600', textColor: 'text-purple-700 dark:text-purple-300', icon: <Zap size={18} className="text-purple-600 dark:text-purple-300" />, borderColor: 'border-purple-600' };
@@ -156,21 +161,60 @@ export default function App() {
   const [newTaskDate, setNewTaskDate] = useState('');
   const [newTaskTime, setNewTaskTime] = useState('');
   const [newTaskTag, setNewTaskTag] = useState('');
+  const [newTaskIsEvent, setNewTaskIsEvent] = useState(false); // Nuevo estado para el checkbox
+
   const [activeFilter, setActiveFilter] = useState('all');
   const [showCompleted, setShowCompleted] = useState(false);
   const [taskToDelete, setTaskToDelete] = useState(null);
+
   const [editingId, setEditingId] = useState(null);
   const [editTitle, setEditTitle] = useState('');
   const [editDate, setEditDate] = useState('');
   const [editTime, setEditTime] = useState('');
   const [editTag, setEditTag] = useState('');
+  const [editIsEvent, setEditIsEvent] = useState(false); // Nuevo estado edición
+
   const [newSubtaskTitle, setNewSubtaskTitle] = useState('');
   const [activeTaskIdForSubtask, setActiveTaskIdForSubtask] = useState(null);
 
-  const openCreateModal = () => { const d = new Date(); const l = new Date(d.getTime() - (d.getTimezoneOffset() * 60000)).toISOString().split('T')[0]; setNewTaskDate(l); setNewTaskTime(''); setNewTaskTitle(''); setNewTaskTag(''); setIsModalOpen(true); };
-  const addTask = (e) => { e.preventDefault(); if (!newTaskTitle || !newTaskDate) return; setTasks([...tasks, { id: Date.now(), title: newTaskTitle, date: newTaskDate, time: newTaskTime, tag: newTaskTag, completed: false, subtasks: [] }]); setIsModalOpen(false); };
-  const startEditing = (t) => { setEditingId(t.id); setEditTitle(t.title); setEditDate(t.date); setEditTime(t.time || ''); setEditTag(t.tag || ''); };
-  const saveEdit = (id) => { setTasks(tasks.map(t => t.id === id ? { ...t, title: editTitle, date: editDate, time: editTime, tag: editTag } : t)); setEditingId(null); };
+  const openCreateModal = () => {
+    const d = new Date();
+    const l = new Date(d.getTime() - (d.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
+    setNewTaskDate(l); setNewTaskTime(''); setNewTaskTitle(''); setNewTaskTag(''); setNewTaskIsEvent(false); setIsModalOpen(true);
+  };
+
+  const addTask = (e) => {
+    e.preventDefault();
+    if (!newTaskTitle || !newTaskDate) return;
+    setTasks([...tasks, {
+      id: Date.now(),
+      title: newTaskTitle,
+      date: newTaskDate,
+      time: newTaskTime,
+      tag: newTaskTag,
+      isEvent: newTaskIsEvent, // Guardamos si es evento
+      completed: false,
+      subtasks: []
+    }]);
+    setIsModalOpen(false);
+  };
+
+  const startEditing = (t) => {
+    setEditingId(t.id);
+    setEditTitle(t.title);
+    setEditDate(t.date);
+    setEditTime(t.time || '');
+    setEditTag(t.tag || '');
+    setEditIsEvent(t.isEvent || false);
+  };
+
+  const saveEdit = (id) => {
+    setTasks(tasks.map(t => t.id === id ? {
+      ...t, title: editTitle, date: editDate, time: editTime, tag: editTag, isEvent: editIsEvent
+    } : t));
+    setEditingId(null);
+  };
+
   const initiateDelete = (id) => setTaskToDelete(id);
   const confirmDelete = () => { if (taskToDelete) { setTasks(tasks.filter(t => t.id !== taskToDelete)); setTaskToDelete(null); } };
   const toggleComplete = (id) => setTasks(tasks.map(t => t.id === id ? { ...t, completed: !t.completed } : t));
@@ -209,15 +253,25 @@ export default function App() {
             if (!day) return <div key={`b-${i}`} className="aspect-square"></div>;
             const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 
-            // APLICAR FILTROS AL CALENDARIO TAMBIÉN
-            const dayTasks = tasks.filter(t => t.date === dateStr && (activeFilter === 'all' || t.tag === activeFilter));
+            // FILTRADO INTELIGENTE EN CALENDARIO:
+            // 1. Respeta el filtro de etiqueta activo (activeFilter)
+            // 2. Oculta tareas completadas EXCEPTO si son eventos (isEvent = true)
+            const dayTasks = tasks.filter(t => {
+              const matchesTag = activeFilter === 'all' || t.tag === activeFilter;
+              const matchesDate = t.date === dateStr;
+              const isVisible = !t.completed || t.isEvent; // Aquí está la magia de "evento persiste"
+              return matchesDate && matchesTag && isVisible;
+            });
 
             let dotColor = "", dayTextColor = "text-slate-600 dark:text-slate-400", fontWeight = "font-medium";
             if (dayTasks.length > 0) {
-              const isAllCompleted = dayTasks.every(t => t.completed);
+              // Si todas son eventos completados, el color es sutil
+              const allEventsDone = dayTasks.every(t => t.completed && t.isEvent);
               const hasPending = dayTasks.some(t => !t.completed);
-              if (isAllCompleted) dotColor = "bg-slate-300 dark:bg-slate-600";
-              else if (hasPending) {
+
+              if (allEventsDone) {
+                dotColor = "bg-slate-300 dark:bg-slate-600"; // Gris para eventos pasados
+              } else if (hasPending) {
                 const diff = getCalendarDaysDiff(dateStr);
                 const config = getUrgencyConfig(diff, diff < 0, false);
                 dotColor = config.bgColor;
@@ -298,9 +352,8 @@ export default function App() {
                 <>
                   <div className="space-y-3">
                     {sortedActiveTasks.map(task => {
-                      // ... (LÓGICA DE RENDERIZADO DE TARJETA - IGUAL QUE ANTES) ...
                       const { statusText, isOverdue, days } = getTaskStatus(task);
-                      const style = getUrgencyConfig(days, isOverdue);
+                      const style = getUrgencyConfig(days, isOverdue, task.completed, task.isEvent);
                       const isEditing = editingId === task.id;
                       const totalSub = task.subtasks?.length || 0;
                       const completedSub = task.subtasks?.filter(st => st.completed).length || 0;
@@ -311,9 +364,13 @@ export default function App() {
                           <div key={task.id} className="bg-white dark:bg-slate-800 p-4 rounded-xl shadow-lg border-2 border-indigo-500 animate-in fade-in zoom-in-95 duration-200">
                             <div className="flex flex-col gap-3">
                               <input type="text" value={editTitle} onChange={(e) => setEditTitle(e.target.value)} className="font-semibold text-lg border-b border-indigo-200 dark:border-indigo-700 focus:border-indigo-600 dark:focus:border-indigo-400 outline-none bg-transparent text-slate-900 dark:text-white" />
-                              <div className="flex gap-2">
+                              <div className="flex gap-2 items-center">
                                 <input type="date" value={editDate} onChange={(e) => setEditDate(e.target.value)} className="text-sm bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-white p-2 rounded border dark:border-slate-600" />
                                 <input type="time" value={editTime} onChange={(e) => setEditTime(e.target.value)} className="text-sm bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-white p-2 rounded border dark:border-slate-600" />
+                                <label className="flex items-center gap-2 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase ml-2 cursor-pointer">
+                                  <input type="checkbox" checked={editIsEvent} onChange={(e) => setEditIsEvent(e.target.checked)} className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500" />
+                                  Evento Fijo
+                                </label>
                               </div>
                               <div className="flex justify-end gap-2">
                                 <button onClick={() => setEditingId(null)} className="px-3 py-1 text-sm text-slate-500">Cancelar</button>
@@ -335,6 +392,7 @@ export default function App() {
                                   <div className="flex items-center gap-2 flex-wrap">
                                     <h3 className="font-semibold text-base md:text-lg text-slate-800 dark:text-slate-100 break-words leading-tight">{task.title}</h3>
                                     {task.tag && <span className="text-[10px] bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded-full flex items-center gap-1 text-slate-600 dark:text-slate-300"><Tag size={10} /> {task.tag}</span>}
+                                    {task.isEvent && <span className="text-[10px] bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded-full flex items-center gap-1 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-600"><CalendarIcon size={10} /> Evento</span>}
                                   </div>
                                 </div>
                                 <div className="hidden md:flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -397,7 +455,10 @@ export default function App() {
                           {completedTasks.map(task => (
                             <div key={task.id} className="flex items-center gap-3 p-3 bg-slate-100 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 opacity-60">
                               <button onClick={() => toggleComplete(task.id)} className="text-indigo-500"><CheckCircle2 size={20} className="fill-current bg-white dark:bg-slate-800 rounded-full" /></button>
-                              <span className="text-slate-500 line-through text-sm flex-grow">{task.title}</span>
+                              <div className="flex-grow flex flex-col">
+                                <span className="text-slate-500 line-through text-sm">{task.title}</span>
+                                {task.isEvent && <span className="text-[10px] text-slate-400 flex items-center gap-1"><CalendarIcon size={10} /> Evento pasado</span>}
+                              </div>
                               <button onClick={() => initiateDelete(task.id)} className="text-slate-400 hover:text-red-500 p-2"><Trash2 size={16} /></button>
                             </div>
                           ))}
@@ -428,31 +489,34 @@ export default function App() {
                         <>
                           <h3 className="text-lg font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-2">
                             <span>{new Date(selectedDate + 'T00:00:00').toLocaleDateString('es-ES', { day: 'numeric', month: 'long' })}</span>
-                            {/* MODIFICADO: El conteo y el filtrado de la lista lateral ahora
-                                            TAMBIÉN respetan el filtro activo (activeFilter) 
-                                        */}
                             <span className="text-xs font-normal bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-2 py-0.5 rounded-full">
-                              {tasks.filter(t => t.date === selectedDate && (activeFilter === 'all' || t.tag === activeFilter)).length} tareas
+                              {tasks.filter(t => {
+                                const matchesFilter = activeFilter === 'all' || t.tag === activeFilter;
+                                const matchesDate = t.date === selectedDate;
+                                // Aquí mostramos TODO lo del día, incluso completadas si son eventos
+                                // O si es una tarea completada, ¿queremos verla en la lista lateral?
+                                // El usuario dijo: "solo se muestre la tarea de esa etiqueta en ese día".
+                                // Asumimos que quiere ver todas las tareas relevantes de ese día (pendientes o eventos completados).
+                                return matchesDate && matchesFilter && (!t.completed || t.isEvent);
+                              }).length} tareas
                             </span>
                           </h3>
                           <div className="space-y-2 overflow-y-auto flex-grow pr-2 custom-scrollbar">
-                            {/* MODIFICADO: Filtrado por fecha Y etiqueta en la lista lateral
-                                        */}
-                            {tasks.filter(t => t.date === selectedDate && (activeFilter === 'all' || t.tag === activeFilter)).length === 0 && (
-                              <div className="text-center py-12 text-slate-400 italic">No hay tareas con este filtro.</div>
+                            {tasks.filter(t => t.date === selectedDate && (activeFilter === 'all' || t.tag === activeFilter) && (!t.completed || t.isEvent)).length === 0 && (
+                              <div className="text-center py-12 text-slate-400 italic">No hay tareas activas o eventos para este filtro.</div>
                             )}
-                            {tasks.filter(t => t.date === selectedDate && (activeFilter === 'all' || t.tag === activeFilter)).map(task => {
+                            {tasks.filter(t => t.date === selectedDate && (activeFilter === 'all' || t.tag === activeFilter) && (!t.completed || t.isEvent)).map(task => {
                               const { statusText, isOverdue, days } = getTaskStatus(task);
-                              const style = getUrgencyConfig(days, isOverdue, task.completed);
+                              const style = getUrgencyConfig(days, isOverdue, task.completed, task.isEvent);
                               return (
                                 <div key={task.id} className={`group flex items-center gap-3 p-3 bg-white dark:bg-slate-800 rounded-xl border transition-all hover:shadow-sm ${task.completed ? 'border-slate-200 dark:border-slate-700 opacity-60' : 'border-slate-200 dark:border-slate-600'}`}>
                                   <button onClick={() => toggleComplete(task.id)} className={`${task.completed ? 'text-indigo-500' : 'text-slate-300 hover:text-indigo-500'}`}>
                                     <CheckCircle2 size={20} className={task.completed ? "fill-current bg-white dark:bg-slate-800 rounded-full" : ""} />
                                   </button>
                                   <div className="flex-grow min-w-0">
-                                    <div className={`font-medium truncate ${task.completed ? 'line-through text-slate-500' : 'text-slate-800 dark:text-white'}`}>{task.title}</div>
+                                    <div className={`font-medium truncate ${task.completed ? 'text-slate-500' : 'text-slate-800 dark:text-white'} ${task.completed && !task.isEvent ? 'line-through' : ''}`}>{task.title}</div>
                                     <div className="flex items-center gap-2 text-xs mt-0.5">
-                                      <span className={`font-bold ${style.textColor} flex items-center gap-1`}>{!task.completed && style.icon} {task.completed ? 'Listo' : statusText}</span>
+                                      <span className={`font-bold ${style.textColor} flex items-center gap-1`}>{(!task.completed || task.isEvent) && style.icon} {task.completed ? (task.isEvent ? 'Evento Pasado' : 'Listo') : statusText}</span>
                                       {task.time && <span className="text-slate-400 flex items-center gap-0.5">| {task.time}</span>}
                                     </div>
                                   </div>
@@ -590,8 +654,21 @@ export default function App() {
                   <div><label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">Fecha Límite</label><input type="date" value={newTaskDate} onChange={(e) => setNewTaskDate(e.target.value)} className="w-full px-4 py-2 bg-slate-50 dark:bg-slate-700 rounded-xl border border-slate-200 dark:border-slate-600 focus:ring-2 focus:ring-indigo-500 outline-none text-slate-900 dark:text-white" /></div>
                   <div><label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">Hora (Opcional)</label><input type="time" value={newTaskTime} onChange={(e) => setNewTaskTime(e.target.value)} className="w-full px-4 py-2 bg-slate-50 dark:bg-slate-700 rounded-xl border border-slate-200 dark:border-slate-600 focus:ring-2 focus:ring-indigo-500 outline-none text-slate-900 dark:text-white" /></div>
                 </div>
-                <div><label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">Etiqueta</label><input type="text" placeholder="Ej: Trabajo, Personal..." value={newTaskTag} list="tags-list-modal" onChange={(e) => setNewTaskTag(e.target.value)} className="w-full pl-10 pr-4 py-2 bg-slate-50 dark:bg-slate-700 rounded-xl border border-slate-200 dark:border-slate-600 focus:ring-2 focus:ring-indigo-500 outline-none text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500" /><datalist id="tags-list-modal">{availableTags.map(tag => <option key={tag} value={tag} />)}</datalist></div>
-                <div className="pt-4 flex gap-3"><button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 py-3 px-4 rounded-xl text-slate-600 dark:text-slate-300 font-medium hover:bg-slate-50 dark:hover:bg-slate-700 border border-transparent hover:border-slate-200 dark:hover:border-slate-600 transition-all">Cancelar</button><button type="submit" disabled={!newTaskTitle || !newTaskDate} className="flex-1 py-3 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-600 dark:hover:bg-indigo-500 text-white font-bold shadow-lg shadow-indigo-200 dark:shadow-none disabled:opacity-50 disabled:shadow-none transition-all">Guardar</button></div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">Etiqueta</label>
+                  <input type="text" placeholder="Ej: Trabajo, Personal..." value={newTaskTag} list="tags-list-modal" onChange={(e) => setNewTaskTag(e.target.value)} className="w-full pl-10 pr-4 py-2 bg-slate-50 dark:bg-slate-700 rounded-xl border border-slate-200 dark:border-slate-600 focus:ring-2 focus:ring-indigo-500 outline-none text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500" />
+                  <datalist id="tags-list-modal">{availableTags.map(tag => <option key={tag} value={tag} />)}</datalist>
+                </div>
+                {/* NUEVO CHECKBOX PARA EVENTO */}
+                <div className="flex items-center gap-2">
+                  <input type="checkbox" id="isEvent" checked={newTaskIsEvent} onChange={(e) => setNewTaskIsEvent(e.target.checked)} className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500 border-gray-300" />
+                  <label htmlFor="isEvent" className="text-sm font-medium text-slate-600 dark:text-slate-300 cursor-pointer">Marcar como Evento Fijo (Persiste al completar)</label>
+                </div>
+
+                <div className="pt-4 flex gap-3">
+                  <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 py-3 px-4 rounded-xl text-slate-600 dark:text-slate-300 font-medium hover:bg-slate-50 dark:hover:bg-slate-700 border border-transparent hover:border-slate-200 dark:hover:border-slate-600 transition-all">Cancelar</button>
+                  <button type="submit" disabled={!newTaskTitle || !newTaskDate} className="flex-1 py-3 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-600 dark:hover:bg-indigo-500 text-white font-bold shadow-lg shadow-indigo-200 dark:shadow-none disabled:opacity-50 disabled:shadow-none transition-all">Guardar</button>
+                </div>
               </form>
             </div>
           </div>
