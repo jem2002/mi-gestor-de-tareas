@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Plus, Trash2, Calendar as CalendarIcon, Clock, CheckCircle2, AlertCircle, AlertTriangle,
   Hourglass, Edit2, X, ChevronDown, ChevronRight, Save, Filter, CheckSquare, Tag,
@@ -9,7 +9,7 @@ import {
 
 export default function App() {
   // --- ESTADO GLOBAL Y NAVEGACIÓN ---
-  const [currentView, setCurrentView] = useState('tasks'); // 'tasks' | 'focus' | 'calendar'
+  const [currentView, setCurrentView] = useState('tasks');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
   // --- ESTADO DE TAREAS ---
@@ -80,36 +80,24 @@ export default function App() {
     }
   }, []);
 
-  // --- FUNCIONES DE NOTIFICACIÓN MEJORADAS ---
+  // --- FUNCIONES DE NOTIFICACIÓN ---
   const playNotificationSound = () => {
     try {
       const AudioContext = window.AudioContext || window.webkitAudioContext;
       if (!AudioContext) return;
-
       const ctx = new AudioContext();
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
-
       osc.connect(gain);
       gain.connect(ctx.destination);
-
-      // MEJORA 1: Tipo 'triangle' es más brillante y audible que 'sine'
       osc.type = 'triangle';
-
-      // MEJORA 2: Frecuencia más alta para cortar a través de la música
-      // De La (880Hz) a La Agudo (1760Hz) rápido
       osc.frequency.setValueAtTime(880, ctx.currentTime);
       osc.frequency.exponentialRampToValueAtTime(1760, ctx.currentTime + 0.15);
-
-      // MEJORA 3: Volumen mucho más alto (0.6 en vez de 0.1)
       gain.gain.setValueAtTime(0.6, ctx.currentTime);
       gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.8);
-
       osc.start(ctx.currentTime);
       osc.stop(ctx.currentTime + 0.8);
-    } catch (e) {
-      console.error("Error de audio:", e);
-    }
+    } catch (e) { console.error("Error audio", e); }
   };
 
   const sendDesktopNotification = (mode) => {
@@ -128,15 +116,10 @@ export default function App() {
         setFocusState(prev => {
           const targetKey = prev.mode === 'work' ? 'workLeft' : 'restLeft';
           const newValue = prev[targetKey] - 1;
-
-          // --- TIEMPO TERMINADO ---
           if (newValue < 0) {
             clearInterval(interval);
-
-            // Disparar Alertas
             playNotificationSound();
             sendDesktopNotification(prev.mode);
-
             return { ...prev, [targetKey]: 0, isRunning: false };
           }
           return { ...prev, [targetKey]: newValue };
@@ -272,12 +255,19 @@ export default function App() {
 
   // --- CALCULOS DE VISTAS ---
   const availableTags = [...new Set(tasks.map(t => t.tag).filter(tag => tag && tag.trim() !== ''))];
+
+  // Filtros
   const filteredTasks = tasks.filter(t => !t.completed && (activeFilter === 'all' || t.tag === activeFilter));
   const completedTasks = tasks.filter(t => t.completed);
+
+  // --- CORRECCIÓN DE ORDENAMIENTO ---
   const sortedActiveTasks = [...filteredTasks].sort((a, b) => {
-    const sA = getTaskStatus(a), sB = getTaskStatus(b);
-    if (sA.isOverdue !== sB.isOverdue) return sA.isOverdue ? -1 : 1;
-    return new Date(a.date + (a.time || 'T00:00')) - new Date(b.date + (b.time || 'T00:00'));
+    // 1. Crear objetos Date completos (Fecha + Hora o T00:00)
+    const dateA = new Date(`${a.date}T${a.time || '23:59:59'}`); // Si no hay hora, al final del día
+    const dateB = new Date(`${b.date}T${b.time || '23:59:59'}`);
+
+    // 2. Ordenar puramente por tiempo (más cercano a más lejano)
+    return dateA - dateB;
   });
 
   // --- COMPONENTE CALENDARIO MES ---
