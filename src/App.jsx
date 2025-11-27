@@ -58,6 +58,7 @@ export default function App() {
   });
 
   const [isStopSessionModalOpen, setIsStopSessionModalOpen] = useState(false);
+  const [isSessionCompleteModalOpen, setIsSessionCompleteModalOpen] = useState(false);
 
   // --- PERSISTENCIA ---
   useEffect(() => { localStorage.setItem('visualTasks', JSON.stringify(tasks)); }, [tasks]);
@@ -102,12 +103,10 @@ export default function App() {
             const newValue = prev[targetKey] - secondsToSubtract;
 
             if (newValue <= 0) {
-              workerRef.current.postMessage('stop');
-
               // REPRODUCIR SONIDO Y NOTIFICACIÓN (Tono de alarma repetido)
               const playAlarm = async () => {
                 const audio = new Audio(NOTIFICATION_SOUND);
-                audio.volume = 0.6; // Volumen audible pero no agresivo
+                audio.volume = 0.4; // Volumen audible pero no agresivo
 
                 try {
                   // Reproducir 3 veces tipo alarma "Beep-Beep-Beep" con pausas
@@ -124,14 +123,39 @@ export default function App() {
 
               playAlarm();
 
-              if (Notification.permission === 'granted') {
-                new Notification("¡Tiempo completado!", {
-                  body: "El tiempo ha terminado.",
-                  icon: "/icon.ico"
-                });
+              // Determinar qué hacer según el modo actual
+              if (prev.mode === 'work') {
+                // Terminó el trabajo, cambiar a descanso automáticamente
+                if (Notification.permission === 'granted') {
+                  new Notification("¡Tiempo de trabajo completado!", {
+                    body: "Iniciando descanso automáticamente...",
+                    icon: "/icon.ico"
+                  });
+                }
+                return { ...prev, workLeft: 0, mode: 'rest', isRunning: true };
+              } else {
+                // Terminó el descanso
+                if (prev.workLeft === 0) {
+                  // Ambos temporizadores en 0, sesión completada
+                  if (Notification.permission === 'granted') {
+                    new Notification("¡Sesión completada!", {
+                      body: "Has completado tu sesión de enfoque.",
+                      icon: "/icon.ico"
+                    });
+                  }
+                  setIsSessionCompleteModalOpen(true);
+                  return { ...prev, restLeft: 0, isRunning: false };
+                } else {
+                  // Solo terminó descanso, volver a trabajo
+                  if (Notification.permission === 'granted') {
+                    new Notification("¡Descanso completado!", {
+                      body: "Volviendo al trabajo...",
+                      icon: "/icon.ico"
+                    });
+                  }
+                  return { ...prev, restLeft: 0, mode: 'work', isRunning: true };
+                }
               }
-
-              return { ...prev, [targetKey]: 0, isRunning: false };
             }
 
             return { ...prev, [targetKey]: newValue };
@@ -298,6 +322,21 @@ export default function App() {
   const confirmStopSession = () => { setFocusState(p => ({ ...p, isSessionActive: false, isRunning: false, mode: 'work' })); setIsStopSessionModalOpen(false); };
   const switchMode = () => setFocusState(p => ({ ...p, mode: p.mode === 'work' ? 'rest' : 'work', isRunning: true }));
   const toggleRun = () => setFocusState(p => ({ ...p, isRunning: !p.isRunning }));
+  const changeActiveTask = (newTaskId) => setFocusState(p => ({ ...p, activeTaskId: Number(newTaskId) }));
+  const completeCurrentTask = () => {
+    if (focusState.activeTaskId) {
+      toggleComplete(focusState.activeTaskId);
+      // Buscar la siguiente tarea pendiente
+      const nextTask = tasks.find(t => !t.completed && t.id !== focusState.activeTaskId);
+      if (nextTask) {
+        setFocusState(p => ({ ...p, activeTaskId: nextTask.id }));
+      }
+    }
+  };
+  const closeSessionCompleteModal = () => {
+    setIsSessionCompleteModalOpen(false);
+    setFocusState(p => ({ ...p, isSessionActive: false, mode: 'work' }));
+  };
 
   // --- CALCULOS ---
   const availableTags = [...new Set(tasks.map(t => t.tag).filter(tag => tag && tag.trim() !== ''))];
@@ -663,7 +702,27 @@ export default function App() {
                       <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-2">2. Tiempo de Enfoque (Minutos)</label>
                       <div className="flex items-center gap-4">
                         <div className="relative flex-grow">
-                          <input type="number" min="1" value={workMinutes} onChange={(e) => setWorkMinutes(Math.max(1, Number(e.target.value)))} className="w-full p-4 text-2xl font-bold bg-slate-50 dark:bg-slate-700 rounded-xl border-none outline-none text-slate-800 dark:text-white text-center focus:ring-2 focus:ring-indigo-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" />
+                          <input
+                            type="number"
+                            min="1"
+                            value={workMinutes}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              // Permitir vacío temporalmente o números válidos
+                              if (val === '' || val === '0') {
+                                setWorkMinutes('');
+                              } else {
+                                setWorkMinutes(Number(val));
+                              }
+                            }}
+                            onBlur={(e) => {
+                              // Al perder el foco, si está vacío o es 0, poner 1
+                              if (e.target.value === '' || Number(e.target.value) === 0) {
+                                setWorkMinutes(1);
+                              }
+                            }}
+                            className="w-full p-4 text-2xl font-bold bg-slate-50 dark:bg-slate-700 rounded-xl border-none outline-none text-slate-800 dark:text-white text-center focus:ring-2 focus:ring-indigo-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                          />
                           <span className="absolute right-4 top-5 text-sm text-slate-400 font-medium">min</span>
                         </div>
                         <div className="flex flex-col items-center px-4 py-2 bg-amber-50 dark:bg-amber-900/20 rounded-xl border border-amber-100 dark:border-amber-800/30">
@@ -684,7 +743,33 @@ export default function App() {
                   </header>
                   <div className="text-center mb-8">
                     <h2 className="text-slate-500 dark:text-slate-400 text-sm font-medium uppercase tracking-wide mb-1">Foco Actual</h2>
-                    <p className="text-xl md:text-2xl font-bold text-slate-900 dark:text-white px-4">{tasks.find(t => t.id === focusState.activeTaskId)?.title || "Tarea sin título"}</p>
+                    <p className="text-xl md:text-2xl font-bold text-slate-900 dark:text-white px-4 mb-4">{tasks.find(t => t.id === focusState.activeTaskId)?.title || "Tarea sin título"}</p>
+
+                    {/* SELECTOR DE TAREA Y BOTÓN COMPLETAR */}
+                    <div className="flex flex-col sm:flex-row gap-3 items-center justify-center mt-4 px-4">
+                      <div className="relative flex-grow max-w-md w-full">
+                        <select
+                          value={focusState.activeTaskId || ''}
+                          onChange={(e) => changeActiveTask(e.target.value)}
+                          className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-700 rounded-xl border border-slate-200 dark:border-slate-600 outline-none text-slate-800 dark:text-white font-medium appearance-none cursor-pointer focus:ring-2 focus:ring-indigo-500 text-sm"
+                        >
+                          {tasks.filter(t => !t.completed).map(task => {
+                            const { isOverdue, days } = getTaskStatus(task);
+                            const label = `${task.title} (${isOverdue ? `Vencida ${Math.abs(days)}d` : days === 0 ? 'HOY' : `${days}d`})`;
+                            return <option key={task.id} value={task.id}>{label}</option>;
+                          })}
+                        </select>
+                        <ChevronDown className="absolute right-3 top-3 text-slate-400 pointer-events-none" size={16} />
+                      </div>
+
+                      <button
+                        onClick={completeCurrentTask}
+                        className="px-4 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl font-medium text-sm shadow-lg shadow-emerald-200 dark:shadow-emerald-900/30 transition-all transform active:scale-95 flex items-center gap-2 whitespace-nowrap"
+                      >
+                        <CheckCircle2 size={18} />
+                        Completar Tarea
+                      </button>
+                    </div>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
                     <div className={`relative overflow-hidden p-6 rounded-3xl border-2 transition-all duration-300 ${focusState.mode === 'work' ? 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-500 shadow-lg scale-105 z-10' : 'bg-white dark:bg-slate-800 border-transparent opacity-60'}`}>
@@ -768,6 +853,49 @@ export default function App() {
                 <button onClick={() => setIsStopSessionModalOpen(false)} className="flex-1 py-2.5 rounded-xl text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors font-medium">Cancelar</button>
                 <button onClick={confirmStopSession} className="flex-1 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold shadow-lg transition-all">Salir</button>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* MODAL DE SESIÓN COMPLETADA */}
+        {isSessionCompleteModalOpen && (
+          <div className="fixed inset-0 bg-slate-900/50 dark:bg-slate-900/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
+            <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl w-full max-w-md p-8 text-center border dark:border-slate-700 animate-in zoom-in-95 duration-300">
+              {/* Icono celebratorio */}
+              <div className="w-20 h-20 bg-gradient-to-br from-emerald-400 to-emerald-600 rounded-full flex items-center justify-center mx-auto mb-6 shadow-lg shadow-emerald-200 dark:shadow-emerald-900/30">
+                <CheckCircle2 className="text-white" size={40} strokeWidth={3} />
+              </div>
+
+              <h3 className="text-2xl font-bold text-slate-900 dark:text-white mb-3">¡Sesión completada!</h3>
+              <p className="text-slate-600 dark:text-slate-400 mb-2">
+                Has completado tu sesión de enfoque con éxito.
+              </p>
+
+              {/* Resumen de la sesión */}
+              <div className="bg-slate-50 dark:bg-slate-700/50 rounded-xl p-4 my-6">
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <div className="text-slate-500 dark:text-slate-400 text-xs uppercase tracking-wide mb-1">Trabajo</div>
+                    <div className="text-xl font-bold text-indigo-600 dark:text-indigo-400">{formatTime(focusState.initialWork)}</div>
+                  </div>
+                  <div>
+                    <div className="text-slate-500 dark:text-slate-400 text-xs uppercase tracking-wide mb-1">Descanso</div>
+                    <div className="text-xl font-bold text-amber-600 dark:text-amber-400">{formatTime(focusState.initialRest)}</div>
+                  </div>
+                </div>
+              </div>
+
+              <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">
+                ¿Listo para otra sesión de enfoque?
+              </p>
+
+              <button
+                onClick={closeSessionCompleteModal}
+                className="w-full py-3.5 rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-700 hover:to-indigo-600 text-white font-bold shadow-lg shadow-indigo-200 dark:shadow-indigo-900/30 transition-all transform active:scale-95 flex items-center justify-center gap-2"
+              >
+                <RotateCcw size={20} />
+                Configurar Nueva Sesión
+              </button>
             </div>
           </div>
         )}

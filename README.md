@@ -25,8 +25,10 @@ Un sistema diseñado para evitar el *burnout* y mantener la concentración:
 
 *   **Configuración Previa:** Define tu tarea y tiempo antes de empezar.
 *   **Regla 4:1:** Calcula automáticamente el tiempo de descanso ideal (ej: 60 min trabajo -> 15 min descanso).
-*   **Interfaz Zen:** Sin botones innecesarios. O trabajas, o descansas.
-*   **🔔 Notificaciones:** Alerta de sonido y notificación nativa de escritorio.
+*   **Transiciones Automáticas:** Al terminar el trabajo, automáticamente inicia el descanso (y viceversa).
+*   **Gestión Flexible:** Cambia de tarea o complétalas durante la sesión sin interrumpir tu flujo.
+*   **Modal de Sesión Completada:** Celebra tu logro con un resumen al finalizar ambos temporizadores.
+*   **🔔 Notificaciones:** Alerta de sonido y notificación nativa en cada transición.
 
 ### **3. 📅 Calendario Interactivo Dual**
 Planificación visual a mediano plazo:
@@ -80,7 +82,8 @@ Necesitas tener instalado [Node.js](https://nodejs.org/) (v18 o superior).
 
 ## **💡 Atajos y Trucos**
 
-*   **Reinicio Rápido:** En el Modo Enfoque, usa el botón de "Configuración" para detener el temporizador.
+*   **Gestión en Sesión:** Durante el Modo Enfoque, usa el selector para cambiar de tarea o el botón verde para completarla sin salir.
+*   **Configuración Rápida:** El campo de minutos permite borrado completo para entrada rápida de nuevos valores.
 *   **Filtros Rápidos:** Usa la barra superior en la lista de tareas para filtrar por etiquetas (Trabajo, Personal, etc.).
 *   **Backup:** Al ser local, puedes hacer backup copiando el archivo de almacenamiento local de tu navegador/electron si es necesario.
 
