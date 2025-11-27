@@ -1,4 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import TimerWorker from './timer.worker?worker';
+import { NOTIFICATION_SOUND } from './utils/sounds';
 import {
   Plus, Trash2, Calendar as CalendarIcon, Clock, CheckCircle2, AlertCircle, AlertTriangle,
   Hourglass, Edit2, X, ChevronDown, ChevronRight, Save, Filter, CheckSquare, Tag,
@@ -70,22 +72,90 @@ export default function App() {
 
   // --- LOGICA DEL TEMPORIZADOR ---
   useEffect(() => {
-    let interval = null;
-    if (focusState.isRunning && focusState.isSessionActive) {
-      interval = setInterval(() => {
-        setFocusState(prev => {
-          const targetKey = prev.mode === 'work' ? 'workLeft' : 'restLeft';
-          const newValue = prev[targetKey] - 1;
-          if (newValue < 0) {
-            clearInterval(interval);
-            return { ...prev, [targetKey]: 0, isRunning: false };
-          }
-          return { ...prev, [targetKey]: newValue };
-        });
-      }, 1000);
+    if (Notification.permission !== 'granted') {
+      Notification.requestPermission();
     }
-    return () => clearInterval(interval);
-  }, [focusState.isRunning, focusState.mode, focusState.isSessionActive]);
+  }, []);
+
+  // --- LOGICA DEL TEMPORIZADOR (WEB WORKER) ---
+  const workerRef = useRef(null);
+  const lastTickRef = useRef(null);
+
+  useEffect(() => {
+    workerRef.current = new TimerWorker();
+
+    workerRef.current.onmessage = () => {
+      const now = Date.now();
+      if (!lastTickRef.current) lastTickRef.current = now;
+
+      const delta = now - lastTickRef.current;
+
+      // Si ha pasado al menos 1 segundo
+      if (delta >= 1000) {
+        const secondsToSubtract = Math.floor(delta / 1000);
+
+        if (secondsToSubtract > 0) {
+          setFocusState(prev => {
+            if (!prev.isRunning || !prev.isSessionActive) return prev;
+
+            const targetKey = prev.mode === 'work' ? 'workLeft' : 'restLeft';
+            const newValue = prev[targetKey] - secondsToSubtract;
+
+            if (newValue <= 0) {
+              workerRef.current.postMessage('stop');
+
+              // REPRODUCIR SONIDO Y NOTIFICACIÓN (Tono de alarma repetido)
+              const playAlarm = async () => {
+                const audio = new Audio(NOTIFICATION_SOUND);
+                audio.volume = 0.6; // Volumen audible pero no agresivo
+
+                try {
+                  // Reproducir 3 veces tipo alarma "Beep-Beep-Beep" con pausas
+                  for (let i = 0; i < 3; i++) {
+                    audio.currentTime = 0;
+                    await audio.play();
+                    // Esperar a que termine el sonido más una pausa antes del siguiente
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                  }
+                } catch (e) {
+                  console.error("Error al reproducir sonido:", e);
+                }
+              };
+
+              playAlarm();
+
+              if (Notification.permission === 'granted') {
+                new Notification("¡Tiempo completado!", {
+                  body: "El tiempo ha terminado.",
+                  icon: "/icon.ico"
+                });
+              }
+
+              return { ...prev, [targetKey]: 0, isRunning: false };
+            }
+
+            return { ...prev, [targetKey]: newValue };
+          });
+
+          // Ajustamos el lastTick para mantener la precisión matemática
+          lastTickRef.current += secondsToSubtract * 1000;
+        }
+      }
+    };
+
+    return () => {
+      workerRef.current.terminate();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (focusState.isRunning && focusState.isSessionActive) {
+      lastTickRef.current = Date.now();
+      workerRef.current?.postMessage('start');
+    } else {
+      workerRef.current?.postMessage('stop');
+    }
+  }, [focusState.isRunning, focusState.isSessionActive]);
 
   // --- HELPERS ---
   const formatTime = (seconds) => {
